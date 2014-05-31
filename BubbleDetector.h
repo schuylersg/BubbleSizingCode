@@ -13,7 +13,7 @@ Date: 			5/15/2013
 
 #include <Arduino.h>
 
-const uint8_t NUM_BKGD_POINTS = 4;	//the number of background points to store
+const uint8_t NUM_BKGD_POINTS = 8;	//the number of background points to store
 
 /*************************************************
 Declare structs to hold background measurements for each sensor
@@ -25,8 +25,8 @@ struct backgrounddata{
   uint16_t minvalue;  		//minimum value in the ring buffer
   uint16_t maxvalue;  		//maximum value in the ring buffer
   uint32_t total;    		//the sum of all values in the ring buffer - divide by 8 to get avg value
-  uint16_t detectionvalue;	//the value required for event detection
-  uint8_t counter;		//counter used to selectively choose adc reading to store in ring buffer
+  uint16_t startdetvalue;	//the value required to signify a bubble start event
+  uint16_t enddetvalue;         //the value required to signify a bubble end event
 };
 
 #endif

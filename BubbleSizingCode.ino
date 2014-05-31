@@ -25,7 +25,7 @@ const uint8_t detThree = A2;
 const uint8_t LOOK_FOR_START = 0;
 const uint8_t LOOK_FOR_END = 1;
 
-const unsigned long MAX_TIMEOUT = 10000000;  //5 seconds
+const unsigned long MAX_TIMEOUT = 10000000;  //10 seconds
 const uint8_t MAX_NUMBER_BUBBLES = 8;  //The maximum number of bubbles that can be
 //stored at the same time.
 
@@ -36,10 +36,10 @@ const uint8_t NOISE_MULTIPLILER = 2;  //The amount to multiply the difference
 //betwen max/min backgound readings
 //for estimate of backgournd noise threshold
 
-const uint8_t BKGD_STORAGE = 50;    //Store every 1000th adc reading in background 
-//readings (helps with slow-moving bubbles)
+const uint16_t BKGD_STORAGE = 1000;    //Store every BKGD_STORAGE adc reading in background 
+//readings (helps with slow-moving bubbles) - 1000 should mean approximately 1 every second
 
-const uint8_t FUNNEL_AREA = 6.5;  //square mm area of funnel flow path
+const float FUNNEL_AREA = 6.5;  //square mm area of funnel flow path
 
 /*************************************************
  * GLOBAL VARIABLE DECLARATIONS
@@ -73,6 +73,8 @@ backgrounddata detThreeBkgd;
 uint8_t detTwoNumBubbles;
 uint8_t detThreeNumBubbles;
 
+uint16_t bkgdCounter;
+
 /*************************************************
  * HELPER VARIABLES - these are generic variables but
  * declaring them here give better estimate of RAM usage
@@ -87,7 +89,7 @@ uint8_t nextState;
  * PERFROM SETUP TASKS
  *************************************************/
 void setup(){
-  //initialize pins
+  // Initialize pins
   // It might be, that for power reasons these should be kept as inputs until they need
   // to be used as outputs - check documentation
   pinMode(ledOne, OUTPUT);
@@ -117,6 +119,9 @@ void setup(){
 
   //Initialize background data structs.
   InitializeBkgdStructs();
+  
+  bkgdCounter = 0;  //This counter increments every time detector 1 does not sense a bubble. 
+                    //When it is equal to 
 }
 
 void loop(){
@@ -129,61 +134,59 @@ void loop(){
   while(detOneState == LOOK_FOR_START){
 
     //Put sleep function here and removed delay
-    delay(5);   
+    delay(1);   
 
     //Take ADC reading 
     digitalWriteFast(ledOne, HIGH);   //Turn on the LED
+    
+    //Check if it's time to take a background reading
+    //and if so turn on the other detector LEDs
+    if(bkgdCounter == BKGD_STORAGE){
+      digitalWriteFast(ledTwo, HIGH);  
+      digitalWriteFast(ledThree, HIGH);
+    }
+    
     delayMicroseconds(100);   //delay necessary to allow phototransistor to catch up
     adcReading = analogRead(detOne);  //Read the ADC
     digitalWriteFast(ledOne, LOW);    //Turn off the LED
-    //Serial.println(adcReading);
-    //Serial.println(MIN_THRESHOLD);
-    //Serial.println(NOISE_MULTIPLILER);
+
     //Compare ADC reading to background readings
-    detOneState = CheckForBubbleStart(&detOneBkgd, adcReading);
+    detOneState = CheckForBubble(&detOneBkgd, adcReading, LOOK_FOR_START);
+    
+    //Check if it's time to store a background reading - but only do this 
+    //no bubble was detected
+    if(bkgdCounter >= BKGD_STORAGE && detOneState == LOOK_FOR_START){
+      UpdateBkgd(&detOneBkgd, adcReading);  //Update background data struct
+      adcReading = analogRead(detTwo);      //Read the ADC
+      UpdateBkgd(&detTwoBkgd, adcReading);       
+      adcReading = analogRead(detThree);      //Read the ADC
+      
+      //turn off LEDs
+      digitalWriteFast(ledTwo, LOW);  
+      digitalWriteFast(ledThree, LOW);
+      UpdateBkgd(&detThreeBkgd, adcReading);
+
+      //Reset background counter
+      bkgdCounter = 0;
+    }
+    
+    //Increment background counter
+    bkgdCounter = bkgdCounter + 1;
+
   }
 
-
- // Serial.println("det");  //indicate when bubble has been detected
   /*********************************************************
    * At this point a bubble has been detected entering the tube
    *********************************************************/
-
-  //Take background readings - this will probably take around 2 milliseconds.
-  //Zero the previous background totals
-  detTwoBkgd.total = 0;
-  detThreeBkgd.total = 0;
-  digitalWriteFast(ledTwo, HIGH);
+  
+  // Serial.println("det");  //indicate when bubble has been detected
+  
+  //Make sure all three LEDs are on
+  digitalWriteFast(ledOne, HIGH);  
+  digitalWriteFast(ledTwo, HIGH);  
   digitalWriteFast(ledThree, HIGH);
-  delayMicroseconds(200);
-  for(i = 0; i < NUM_BKGD_POINTS; i++){
-    //Take ADC reading for detector two
-    // digitalWriteFast(ledTwo, HIGH);   //Turn on the LED
-    adcReading = analogRead(detTwo);  //Read the ADC
-    //Serial.println(adcReading);
-    //digitalWriteFast(ledTwo, LOW);    //Turn off the LED
-    detTwoBkgd.rb[i] = adcReading;
-    //Need to manually update the total here too
-    detTwoBkgd.total = detTwoBkgd.total + adcReading; 
-    //Serial.print(detTwoBkgd.rb[i]);
-
-    //Take ADC reading for detector three
-    // digitalWriteFast(ledThree, HIGH);   //Turn on the LED
-    adcReading = analogRead(detThree);  //Read the ADC
-    //digitalWriteFast(ledThree, LOW);    //Turn off the LED
-    detThreeBkgd.rb[i] = adcReading;
-    detThreeBkgd.total = detThreeBkgd.total + adcReading;     
-  }
-
-  //Update the background inofrmation for each detector
-  //This calculates new max, min, and detectionvalue values
-  UpdateBkgd(&detTwoBkgd);
-  UpdateBkgd(&detThreeBkgd);
-
-  /**********************************************************************
-   *Now we are ready to start looking for bubbles moving past the detector
-   **********************************************************************/
-
+  delayMicroseconds(100);   //delay necessary to allow phototransistors to warm up
+  
   numBubblesInTube = 1;  //Initially set to one because the first bubble has been detected 
 
   //Initialize detTwo and detThree state and the number
@@ -196,14 +199,11 @@ void loop(){
   //Get the current time so that we know when to timeout the operation of looking for a bubble
   timeoutClockStart = micros();
   tempTime = timeoutClockStart;
-  digitalWriteFast(ledOne, HIGH);
   while ((numBubblesInTube > 0) && (tempTime - timeoutClockStart < MAX_TIMEOUT)) {
     //Take ADC reading from detector 1 - this is to make sure a new bubble hasn't entered
     //We only really care about detecting the start of a new bubble
-    //digitalWriteFast(ledOne, HIGH);   //Turn on the LED
     adcReading = analogRead(detOne);  //Read the ADC
-    //digitalWriteFast(ledOne, LOW);    //Turn off the LED
-
+    
     nextState = CheckForBubble(&detOneBkgd, adcReading, detOneState);
     if(detOneState == LOOK_FOR_START && nextState == LOOK_FOR_END){
       numBubblesInTube += 1; //there is a new bubble in the tube
@@ -217,26 +217,14 @@ void loop(){
     if(detTwoState == LOOK_FOR_START){
       detTwoStartTime[detTwoNumBubbles] = tempTime;
     }
-    //toggle led and take sensor reading
-    //digitalWriteFast(ledTwo, HIGH);   //Turn on the LED
     adcReading = analogRead(detTwo);  //Read the ADC
-    //digitalWriteFast(ledTwo, LOW);    //Turn off the LED
     nextState = CheckForBubble(&detTwoBkgd, adcReading, detTwoState); 
 
-    //set up mechanism to measure bubble detection times
-    if(nextState = LOOK_FOR_END && nextState == LOOK_FOR_END){
-      digitalWriteFast(debugger2, HIGH); //turn on debugging pin to check times
-    } 
     //if the end of a bubble has occured store the current time
     if(detTwoState == LOOK_FOR_END && nextState == LOOK_FOR_START){
       detTwoEndTime [detTwoNumBubbles] = tempTime;
       detTwoNumBubbles += 1;
-      digitalWriteFast(debugger2, LOW);
-
     }
-
-
-
     detTwoState = nextState;
 
     //Take a measurement for detector three.
@@ -245,22 +233,15 @@ void loop(){
     if(detThreeState == LOOK_FOR_START){
       detThreeStartTime[detThreeNumBubbles] = tempTime;
     }
-    //digitalWriteFast(ledThree, HIGH);   //Turn on the LED
     adcReading = analogRead(detThree);  //Read the ADC
-    //digitalWriteFast(ledThree, LOW);    //Turn off the LED
     nextState = CheckForBubble(&detThreeBkgd, adcReading, detThreeState);  
-    //Serial.println(nextState);
     //if the end of a bubble has occured store the current time
     //and decrease the number of bubbles in the tube
-    if(nextState = LOOK_FOR_END && nextState == LOOK_FOR_END){
-      digitalWriteFast(debugger3, HIGH); //turn on debugging pin to check times
-    } 
-
+    
     if(detThreeState == LOOK_FOR_END && nextState == LOOK_FOR_START){
       detThreeEndTime[detThreeNumBubbles] = tempTime;
       detThreeNumBubbles += 1;
       numBubblesInTube -= 1;
-      digitalWriteFast(debugger3, LOW); //turn off debugging pin to check times
     }
     detThreeState = nextState;
 
@@ -270,12 +251,13 @@ void loop(){
       timeoutClockStart = 0;  //this will cause while loop to exit
     }
   }
+  //No more bubbles in tube, so save the data we have
+  //or transmit if in debug mode.
+
+  //First turn off all LEDs
   digitalWriteFast(ledOne, LOW);
   digitalWriteFast(ledTwo, LOW);
   digitalWriteFast(ledThree, LOW);
-
-  //No more bubbles in tube, so save the data we have
-  //or transmit if in debug mode.
 
   //For debug, print if timeout error.
   if((tempTime - timeoutClockStart > MAX_TIMEOUT)){
@@ -355,58 +337,25 @@ void loop(){
   }
 }  // end of loop()
 
-/******************************************************************
- * This method checks to see if a bubble is being detected
- * If no bubble is detected, it updates the variables in backgrounddata
- * to reflect the most recent measurements
- ******************************************************************/
-uint8_t CheckForBubbleStart(backgrounddata* bkgd, uint16_t newValue){
-  //Serial.println(bkgd->detectionvalue);
-  //for(uint8_t j = 0; j<8; j++){
-  //Serial.print(bkgd->rb[j]);
-  //Serial.print(" "); 
-  //}
-  if(newValue < bkgd->detectionvalue){
-    return LOOK_FOR_END;    // bubble detected, so immediately return
-  }
-
-  //update the total value
-  bkgd->total = bkgd->total - bkgd->rb[bkgd->pos] + newValue;
-  //store the new value
-  bkgd->rb[bkgd->pos] = newValue;
-  //update the pos value
-  bkgd->pos = bkgd->pos + 1;
-  if(bkgd->pos == NUM_BKGD_POINTS){
-    bkgd->pos = 0;
-  }
-
-  //call update background to find new min, max, and detection levels
-  UpdateBkgd(bkgd);
-
-  return LOOK_FOR_START;
-}
 
 /******************************************************************
  * This method checks to see if a bubble is no longer being detected
+ * The value to check for is dependent on whether the detector is 
+ * looking for a bubble to start or to end. 
  ******************************************************************/
 uint8_t CheckForBubble(backgrounddata* bkgd, uint16_t newValue, uint8_t state){
 
-  //add hysterisis so detectors can see end of slow-moving bubbles
   if(state == LOOK_FOR_START){
-    if(newValue < bkgd->detectionvalue){
+    if(newValue < bkgd->startdetvalue){
       return LOOK_FOR_END;    // bubble detected
-
     }
     else{
       return LOOK_FOR_START;
     }
   }
   else{
-    //0.02 factor for detectionvalue chosen by trial-error, may change later
-    if(newValue > bkgd->detectionvalue + 0.02*bkgd->detectionvalue){
-      //Serial.print(0.01*bkgd->detectionvalue);
+    if(newValue > bkgd->enddetvalue){
       return LOOK_FOR_START;
-      //digitalWriteFast(debugger, LOW);
     }
     else{
       return LOOK_FOR_END;
@@ -418,22 +367,23 @@ uint8_t CheckForBubble(backgrounddata* bkgd, uint16_t newValue, uint8_t state){
  * This method updates the max, min, and detectionvalue of the 
  * backgrounddata struct
  ******************************************************************/
-void UpdateBkgd(backgrounddata * bkgd){
+void UpdateBkgd(backgrounddata * bkgd, uint16_t newValue){
+  
+  //update the total value
+  bkgd->total = bkgd->total - bkgd->rb[bkgd->pos] + newValue;
+  //store the new value
+  bkgd->rb[bkgd->pos] = newValue;
+  //update the pos value
+  bkgd->pos = bkgd->pos + 1;
+  if(bkgd->pos == NUM_BKGD_POINTS){
+    bkgd->pos = 0;
+  }
+
   //Update max/min and total values of ringbuffer 
   bkgd->maxvalue = 0;
   bkgd->minvalue = 1024;  //maximum value of 10 bit adc
-  uint16_t bkgd_counter = 0;      //initialize counter to 0
-  //only store some adc readings, helps with slow bubbles
-  while(bkgd_counter < BKGD_STORAGE){
-    bkgd_counter = bkgd_counter + 1;  //increase counter by 1 and exit loop
-    // Serial.print("counter");
-    //Serial.println(bkgd_counter);
-  }
 
   for (uint8_t j = 0; j < NUM_BKGD_POINTS; j++){
-
-    //bkgd_counter = 0;   //re-set counter to 0
-    //Serial.println(bkgd_counter);
     if(bkgd->rb[j] > bkgd->maxvalue){
       bkgd->maxvalue = bkgd->rb[j];
     }
@@ -443,22 +393,23 @@ void UpdateBkgd(backgrounddata * bkgd){
 
     //Pick the more conservative noise threshold
     uint16_t noiseThreshold = max((bkgd->maxvalue - bkgd->minvalue) * NOISE_MULTIPLILER, 
-    MIN_THRESHOLD);  //the multiply by 4 is made up
+    MIN_THRESHOLD);  
 
     //if the threshold is greater than the average value, then detection is impossible
     if((bkgd->total/NUM_BKGD_POINTS) < noiseThreshold){
-      bkgd->detectionvalue = 0;
+      bkgd->startdetvalue = 0;
+      bkgd->enddetvalue = 1023; //2^10-1
     }
     else{
       //pick the more conservative detection value
-      bkgd->detectionvalue = (bkgd->total/NUM_BKGD_POINTS) - noiseThreshold;
+      bkgd->startdetvalue = (bkgd->total/NUM_BKGD_POINTS) - noiseThreshold;
+      
+      //The enddetvalue is arbitrarily larger than the startdetvalue by half the noise threshold.
+      //This should add significant hysteresis so that a bubble insn't instantly detected and then "undetected"
+      bkgd->enddetvalue = bkgd->startdetvalue + (noiseThreshold/2);
     }
-//    delay(5);
-    // Serial.println("detectionvalue");
-    //Serial.println(bkgd->detectionvalue);
   }
 }
-
 
 /******************************************************************
  * This method initializes the backgrounddata structs used in the 
@@ -473,9 +424,9 @@ void InitializeBkgdStructs(){
   detOneBkgd.pos = 0;
   detTwoBkgd.pos = 0;
   detThreeBkgd.pos = 0;
-  UpdateBkgd(&detOneBkgd);
-  UpdateBkgd(&detTwoBkgd);
-  UpdateBkgd(&detThreeBkgd);
+  UpdateBkgd(&detOneBkgd, 0);
+  UpdateBkgd(&detTwoBkgd, 0);
+  UpdateBkgd(&detThreeBkgd, 0);
 }
 
 
