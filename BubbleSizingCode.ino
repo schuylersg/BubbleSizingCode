@@ -73,6 +73,7 @@ backgrounddata detOneBkgd;
 backgrounddata detTwoBkgd;
 backgrounddata detThreeBkgd;
 
+uint8_t detOneNumBubbles;
 uint8_t detTwoNumBubbles;
 uint8_t detThreeNumBubbles;
 
@@ -126,6 +127,11 @@ void setup(){
   
   bkgdCounter = 0;  //This counter increments every time detector 1 does not sense a bubble. 
                     //When it is equal to 
+  
+  //Turn on all LEDs
+  digitalWriteFast(ledOne, HIGH);   //Turn on the LED
+  digitalWriteFast(ledTwo, HIGH);   //Turn on the LED
+  digitalWriteFast(ledThree, HIGH);   //Turn on the LED
 }
 
 void loop(){
@@ -137,24 +143,13 @@ void loop(){
 
   while(detOneState == LOOK_FOR_START){
 
-    //Put sleep function here and removed delay
-    delay(1);   
-
-    //Take ADC reading 
-    digitalWriteFast(ledOne, HIGH);   //Turn on the LED
+    tempTime = micros();   //record current time
+    detOneStartTime[0] = tempTime;
     
-    //Check if it's time to take a background reading
-    //and if so turn on the other detector LEDs
-    if(bkgdCounter == BKGD_STORAGE){
-      digitalWriteFast(ledTwo, HIGH);  
-      digitalWriteFast(ledThree, HIGH);
-    }
-    
-    delayMicroseconds(100);   //delay necessary to allow phototransistor to catch up
     adcReading = analogRead(detOne);  //Read the ADC
-    digitalWriteFast(ledOne, LOW);    //Turn off the LED
 
     //Compare ADC reading to background readings
+    
     detOneState = CheckForBubble(&detOneBkgd, adcReading, LOOK_FOR_START);
     
     //Check if it's time to store a background reading - but only do this 
@@ -164,10 +159,6 @@ void loop(){
       adcReading = analogRead(detTwo);      //Read the ADC
       UpdateBkgd(&detTwoBkgd, adcReading);       
       adcReading = analogRead(detThree);      //Read the ADC
-      
-      //turn off LEDs
-      digitalWriteFast(ledTwo, LOW);  
-      digitalWriteFast(ledThree, LOW);
       UpdateBkgd(&detThreeBkgd, adcReading);
 
       //Reset background counter
@@ -184,19 +175,14 @@ void loop(){
    *********************************************************/
   
   // Serial.println("det");  //indicate when bubble has been detected
-  
-  //Make sure all three LEDs are on
-  digitalWriteFast(ledOne, HIGH);  
-  digitalWriteFast(ledTwo, HIGH);  
-  digitalWriteFast(ledThree, HIGH);
-  delayMicroseconds(100);   //delay necessary to allow phototransistors to warm up
-  
+    
   numBubblesInTube = 1;  //Initially set to one because the first bubble has been detected 
 
   //Initialize detTwo and detThree state and the number
   //of bubbles they've seen
   detTwoState = LOOK_FOR_START;
   detThreeState = LOOK_FOR_START;
+  detOneNumBubbles = 0;
   detTwoNumBubbles = 0;
   detThreeNumBubbles = 0;
 
@@ -206,11 +192,19 @@ void loop(){
   while ((numBubblesInTube > 0) && (tempTime - timeoutClockStart < MAX_TIMEOUT)) {
     //Take ADC reading from detector 1 - this is to make sure a new bubble hasn't entered
     //We only really care about detecting the start of a new bubble
+    tempTime = micros();   //record current time
+    //If we are currently looking for the start of a bubble, save the time
+    if(detOneState == LOOK_FOR_START){
+      detOneStartTime[detOneNumBubbles] = tempTime;
+    }
     adcReading = analogRead(detOne);  //Read the ADC
     
     nextState = CheckForBubble(&detOneBkgd, adcReading, detOneState);
     if(detOneState == LOOK_FOR_START && nextState == LOOK_FOR_END){
-      numBubblesInTube += 1; //there is a new bubble in the tube
+      numBubblesInTube += 1; //there is a new bubble in the tube  
+    } else if(detOneState == LOOK_FOR_END && nextState == LOOK_FOR_START){
+      detOneEndTime [detOneNumBubbles] = tempTime;
+      detOneNumBubbles += 1;
     }
     detOneState = nextState;
 
@@ -257,11 +251,6 @@ void loop(){
   }
   //No more bubbles in tube, so save the data we have
   //or transmit if in debug mode.
-
-  //First turn off all LEDs
-  digitalWriteFast(ledOne, LOW);
-  digitalWriteFast(ledTwo, LOW);
-  digitalWriteFast(ledThree, LOW);
 
   //For debug, print if timeout error.
   if((tempTime - timeoutClockStart > MAX_TIMEOUT)){
