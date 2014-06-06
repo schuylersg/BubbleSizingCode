@@ -288,6 +288,26 @@ void loop(){
     Serial.print(detThreeNumBubbles);
   }
 
+  //Print detector background information
+  Serial.print("Det1: ");
+  Serial.print(detOneBkgd.total / NUM_BGKGD_POINTS);
+  Serial.print(", ");
+  Serial.print(detOneBkgd.startdetvalue);
+  Serial.print(", ");
+  Serial.println(detOneBkgd.enddetvalue);
+  Serial.print("Det1: ");
+  Serial.print(detTwoBkgd.total / NUM_BGKGD_POINTS);
+  Serial.print(", ");
+  Serial.print(detTwoBkgd.startdetvalue);
+  Serial.print(", ");
+  Serial.println(detTwoBkgd.enddetvalue);
+  Serial.print("Det1: ");
+  Serial.print(detThreeBkgd.total / NUM_BGKGD_POINTS);
+  Serial.print(", ");
+  Serial.print(detThreeBkgd.startdetvalue);
+  Serial.print(", ");
+  Serial.println(detThreeBkgd.enddetvalue);
+  
   //Print out the bubble information - this is where the code
   //to actually save the bubbles should go
   for(int i = 0; i < detThreeNumBubbles; i++){
