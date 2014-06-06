@@ -1,5 +1,6 @@
 //Bubble Sizing Code 
-//Version 1.2
+//Version 1.3 - This version is for testing purposes.
+//It records timing data for all three detectors
 
 #include <digitalWriteFast.h>
 #include <BubbleDetector.h>
@@ -56,8 +57,10 @@ uint8_t detThreeState = LOOK_FOR_START;
 //bubbles passing the detectors
 //An array of 8 means that up to 8 bubbles can be recorded in
 //a row (e.g. in the tube at the same time)
+unsigned long detOneStartTime [MAX_NUMBER_BUBBLES];
 unsigned long detTwoStartTime [MAX_NUMBER_BUBBLES];
 unsigned long detThreeStartTime [MAX_NUMBER_BUBBLES];
+unsigned long detOneEndTime [MAX_NUMBER_BUBBLES];
 unsigned long detTwoEndTime [MAX_NUMBER_BUBBLES];
 unsigned long detThreeEndTime [MAX_NUMBER_BUBBLES];
 
@@ -105,6 +108,7 @@ void setup(){
   //setup serial for debug purposes
   Serial.begin(115200);
 
+  //Check if this is correct!!!
   analogReference(INTERNAL);
 
   //Initialize SPI for communication with memory chip
