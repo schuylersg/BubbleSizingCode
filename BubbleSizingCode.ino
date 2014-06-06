@@ -286,6 +286,10 @@ void loop(){
   for(int i = 0; i < detThreeNumBubbles; i++){
     Serial.print("Bubble #");
     Serial.println(i);
+    Serial.print(detOneStartTime[i]);
+    Serial.print(", ");
+    Serial.print(detOneEndTime[i]); 
+    Serial.print(" : ");
     Serial.print(detTwoStartTime[i]);
     Serial.print(", ");
     Serial.print(detTwoEndTime[i]); 
@@ -294,6 +298,8 @@ void loop(){
     Serial.print(", ");
     Serial.println(detThreeEndTime[i]);
     Serial.print("DetectorTime: ");
+    Serial.print(detOneEndTime[i] - detOneStartTime[i]);
+    Serial.print(", ");
     Serial.print(detTwoEndTime[i] - detTwoStartTime[i]);
     Serial.print(", ");
     Serial.println(detThreeEndTime[i] - detThreeStartTime[i]);
@@ -301,8 +307,7 @@ void loop(){
     Serial.print(0.001*detThreeStartTime[i] - 0.001*detTwoStartTime[i]);
     Serial.print(", ");
     Serial.println(0.001*detThreeEndTime[i] - 0.001*detTwoEndTime[i]);
-    Serial.print("NumBubs: ");
-    Serial.println(numBubblesInTube);
+
     //calculate rise velocity for det 2 and 3
     Serial.print("RiseVelocity_mm/sec: ");
     Serial.print(5.08 * 1000000 / (detThreeStartTime[i] - detTwoStartTime[i]));
